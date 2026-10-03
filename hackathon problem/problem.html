@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Ambulance Dispatch – Dijkstra + Priority Queue + Greedy</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --accent: #38bdf8;
+      --danger: #f87171;
+      --success: #4ade80;
+      --warn: #fbbf24;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 1.5rem;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    .subtitle { color: var(--muted); margin-bottom: 1.5rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 1.25rem;
+      border: 1px solid #334155;
+    }
+    .card h2 {
+      font-size: 1.1rem;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .badge {
+      font-size: 0.7rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      background: #334155;
+      color: var(--accent);
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, select, button {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border-radius: 8px;
+      border: 1px solid #475569;
+      background: #0f172a;
+      color: var(--text);
+      font-size: 0.95rem;
+      margin-bottom: 0.75rem;
+    }
+    button {
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.9; }
+    button.secondary { background: #475569; color: var(--text); }
+    button.danger { background: var(--danger); color: #0f172a; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.5rem 0.4rem;
+      text-align: left;
+      border-bottom: 1px solid #334155;
+    }
+    th { color: var(--muted); font-weight: 500; }
+    .sev-high { color: var(--danger); font-weight: 600; }
+    .sev-med { color: var(--warn); }
+    .sev-low { color: var(--success); }
+    .status-available { color: var(--success); }
+    .status-busy { color: var(--danger); }
+    #log {
+      background: #020617;
+      border-radius: 8px;
+      padding: 0.75rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      max-height: 320px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: #a5f3fc;
+    }
+    .path-visual {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      align-items: center;
+      margin-top: 0.5rem;
+    }
+    .node {
+      background: #334155;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+    .node.start { background: var(--success); color: #0f172a; }
+    .node.end { background: var(--danger); color: #0f172a; }
+    .arrow { color: var(--muted); }
+    .result-box {
+      background: #0f172a;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 0.75rem;
+    }
+    .full-width { grid-column: 1 / -1; }
+    .row { display: flex; gap: 0.75rem; }
+    .row > * { flex: 1; }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: -0.5rem; margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+  <h1>🚑 Smart Ambulance Dispatch</h1>
+  <p class="subtitle">Prototype using <strong>Priority Queue</strong> (urgency), <strong>Dijkstra</strong> (least-cost route), and <strong>Greedy</strong> (best ambulance assignment)</p>
+
+  <div class="grid">
+    <!-- Graph / Locations -->
+    <div class="card">
+      <h2>📍 Road Network (Graph) <span class="badge">Dijkstra input</span></h2>
+      <p class="hint">Nodes = locations. Edges = roads with base distance + traffic multiplier.</p>
+      <div class="row">
+        <div>
+          <label>From</label>
+          <input id="edgeFrom" placeholder="e.g. Hospital" list="locList" />
+        </div>
+        <div>
+          <label>To</label>
+          <input id="edgeTo" placeholder="e.g. CityCenter" list="locList" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Distance (km)</label>
+          <input id="edgeDist" type="number" min="0.1" step="0.1" value="5" />
+        </div>
+        <div>
+          <label>Traffic factor (1 = free, 2 = heavy)</label>
+          <input id="edgeTraffic" type="number" min="1" max="5" step="0.1" value="1.2" />
+        </div>
+      </div>
+      <button onclick="addEdge()">Add Road</button>
+      <button class="secondary" onclick="loadSampleGraph()">Load Sample Graph</button>
+      <div id="graphTable" style="margin-top:0.75rem; max-height:180px; overflow-y:auto;"></div>
+      <datalist id="locList"></datalist>
+    </div>
+
+    <!-- Ambulances -->
+    <div class="card">
+      <h2>🚑 Ambulances <span class="badge">Greedy selection</span></h2>
+      <div class="row">
+        <div>
+          <label>ID</label>
+          <input id="ambId" placeholder="A1" />
+        </div>
+        <div>
+          <label>Current Location</label>
+          <input id="ambLoc" list="locList" placeholder="Hospital" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Status</label>
+          <select id="ambStatus">
+            <option value="available">Available</option>
+            <option value="busy">Busy</option>
+          </select>
+        </div>
+        <div>
+          <label>Type (capacity weight)</label>
+          <select id="ambType">
+            <option value="1">Basic</option>
+            <option value="1.5">Advanced</option>
+            <option value="2">ICU</option>
+          </select>
+        </div>
+      </div>
+      <button onclick="addAmbulance()">Add Ambulance</button>
+      <button class="secondary" onclick="loadSampleAmbulances()">Load Sample Ambulances</button>
+      <div id="ambTable" style="margin-top:0.75rem; max-height:180px; overflow-y:auto;"></div>
+    </div>
+
+    <!-- Emergency Requests -->
+    <div class="card">
+      <h2>🚨 Emergency Requests <span class="badge">Priority Queue</span></h2>
+      <div class="row">
+        <div>
+          <label>Patient ID / Call ID</label>
+          <input id="reqId" placeholder="E1" />
+        </div>
+        <div>
+          <label>Location</label>
+          <input id="reqLoc" list="locList" placeholder="Park" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Severity (1–10)</label>
+          <input id="reqSev" type="number" min="1" max="10" value="7" />
+        </div>
+        <div>
+          <label>Time since call (min)</label>
+          <input id="reqWait" type="number" min="0" value="2" />
+        </div>
+      </div>
+      <button onclick="addRequest()">Add Request</button>
+      <button class="secondary" onclick="loadSampleRequests()">Load Sample Requests</button>
+      <div id="reqTable" style="margin-top:0.75rem; max-height:180px; overflow-y:auto;"></div>
+    </div>
+
+    <!-- Dispatch Control -->
+    <div class="card">
+      <h2>⚡ Dispatch Engine</h2>
+      <p class="hint">Priority Queue ranks requests → Greedy picks best available ambulance → Dijkstra computes route cost.</p>
+      <button onclick="runDispatch()">Run Full Dispatch Cycle</button>
+      <button class="secondary" onclick="clearLog()">Clear Log</button>
+      <button class="danger" onclick="resetAll()">Reset Everything</button>
+      <div id="resultArea"></div>
+    </div>
+
+    <!-- Decision Log -->
+    <div class="card full-width">
+      <h2>📋 Algorithm Decision Log</h2>
+      <div id="log">Ready. Add graph, ambulances and requests, then click “Run Full Dispatch Cycle”.</div>
+    </div>
+  </div>
+
+  <script>
+    // ========== Data Structures ==========
+    // Graph: adjacency list { node: [{to, dist, traffic, cost}] }
+    const graph = {};
+    // Ambulances: [{id, loc, status, type}]
+    let ambulances = [];
+    // Requests: [{id, loc, severity, wait}]
+    let requests = [];
+
+    // ========== Priority Queue (Min-Heap by priority score) ==========
+    // Lower score = higher priority (more urgent)
+    class PriorityQueue {
+      constructor() { this.heap = []; }
+      push(item, score) {
+        this.heap.push({ item, score });
+        this._bubbleUp(this.heap.length - 1);
+      }
+      pop() {
+        if (this.heap.length === 0) return null;
+        const top = this.heap[0];
+        const last = this.heap.pop();
+        if (this.heap.length > 0) {
+          this.heap[0] = last;
+          this._sinkDown(0);
+        }
+        return top;
+      }
+      isEmpty() { return this.heap.length === 0; }
+      size() { return this.heap.length; }
+      _bubbleUp(i) {
+        while (i > 0) {
+          const p = Math.floor((i - 1) / 2);
+          if (this.heap[p].score <= this.heap[i].score) break;
+          [this.heap[p], this.heap[i]] = [this.heap[i], this.heap[p]];
+          i = p;
+        }
+      }
+      _sinkDown(i) {
+        const n = this.heap.length;
+        while (true) {
+          let smallest = i;
+          const l = 2 * i + 1, r = 2 * i + 2;
+          if (l < n && this.heap[l].score < this.heap[smallest].score) smallest = l;
+          if (r < n && this.heap[r].score < this.heap[smallest].score) smallest = r;
+          if (smallest === i) break;
+          [this.heap[i], this.heap[smallest]] = [this.heap[smallest], this.heap[i]];
+          i = smallest;
+        }
+      }
+    }
+
+    // ========== Dijkstra ==========
+    function dijkstra(start, end) {
+      if (!graph[start] || !graph[end]) return { cost: Infinity, path: [] };
+      const dist = {};
+      const prev = {};
+      const pq = new PriorityQueue();
+      const visited = new Set();
+
+      Object.keys(graph).forEach(n => { dist[n] = Infinity; prev[n] = null; });
+      dist[start] = 0;
+      pq.push(start, 0);
+
+      while (!pq.isEmpty()) {
+        const { item: u, score } = pq.pop();
+        if (visited.has(u)) continue;
+        visited.add(u);
+        if (u === end) break;
+
+        for (const edge of (graph[u] || [])) {
+          const v = edge.to;
+          const alt = dist[u] + edge.cost;
+          if (alt < dist[v]) {
+            dist[v] = alt;
+            prev[v] = u;
+            pq.push(v, alt);
+          }
+        }
+      }
+
+      // Reconstruct path
+      const path = [];
+      let cur = end;
+      if (prev[cur] !== null || cur === start) {
+        while (cur !== null) {
+          path.unshift(cur);
+          cur = prev[cur];
+        }
+      }
+      return { cost: dist[end], path };
+    }
+
+    // ========== Helpers ==========
+    function log(msg) {
+      const el = document.getElementById('log');
+      el.textContent += msg + '\n';
+      el.scrollTop = el.scrollHeight;
+    }
+    function clearLog() {
+      document.getElementById('log').textContent = '';
+    }
+    function updateLocList() {
+      const list = document.getElementById('locList');
+      list.innerHTML = '';
+      Object.keys(graph).forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n;
+        list.appendChild(opt);
+      });
+    }
+    function renderGraph() {
+      let html = '<table><tr><th>From</th><th>To</th><th>Dist</th><th>Traffic</th><th>Cost</th></tr>';
+      const seen = new Set();
+      for (const [u, edges] of Object.entries(graph)) {
+        for (const e of edges) {
+          const key = [u, e.to].sort().join('|');
+          if (seen.has(key)) continue;
+          seen.add(key);
+          html += `<tr><td>${u}</td><td>${e.to}</td><td>${e.dist}</td><td>${e.traffic}</td><td>${e.cost.toFixed(2)}</td></tr>`;
+        }
+      }
+      html += '</table>';
+      document.getElementById('graphTable').innerHTML = html || '<em>No roads yet</em>';
+      updateLocList();
+    }
+    function renderAmbulances() {
+      let html = '<table><tr><th>ID</th><th>Location</th><th>Status</th><th>Type</th></tr>';
+      ambulances.forEach(a => {
+        html += `<tr>
+          <td>${a.id}</td>
+          <td>${a.loc}</td>
+          <td class="status-${a.status}">${a.status}</td>
+          <td>${a.type === 1 ? 'Basic' : a.type === 1.5 ? 'Advanced' : 'ICU'}</td>
+        </tr>`;
+      });
+      html += '</table>';
+      document.getElementById('ambTable').innerHTML = html || '<em>No ambulances</em>';
+    }
+    function renderRequests() {
+      let html = '<table><tr><th>ID</th><th>Location</th><th>Severity</th><th>Wait (min)</th></tr>';
+      requests.forEach(r => {
+        const cls = r.severity >= 8 ? 'sev-high' : r.severity >= 5 ? 'sev-med' : 'sev-low';
+        html += `<tr>
+          <td>${r.id}</td>
+          <td>${r.loc}</td>
+          <td class="${cls}">${r.severity}</td>
+          <td>${r.wait}</td>
+        </tr>`;
+      });
+      html += '</table>';
+      document.getElementById('reqTable').innerHTML = html || '<em>No requests</em>';
+    }
+
+    // ========== Add entities ==========
+    function addEdge() {
+      const from = document.getElementById('edgeFrom').value.trim();
+      const to = document.getElementById('edgeTo').value.trim();
+      const dist = parseFloat(document.getElementById('edgeDist').value);
+      const traffic = parseFloat(document.getElementById('edgeTraffic').value);
+      if (!from || !to || isNaN(dist) || isNaN(traffic)) {
+        alert('Fill all edge fields');
+        return;
+      }
+      const cost = dist * traffic;
+      if (!graph[from]) graph[from] = [];
+      if (!graph[to]) graph[to] = [];
+      graph[from].push({ to, dist, traffic, cost });
+      graph[to].push({ to: from, dist, traffic, cost }); // undirected
+      renderGraph();
+      log(`➕ Road added: ${from} ↔ ${to}  (dist=${dist}, traffic=${traffic}, cost=${cost.toFixed(2)})`);
+    }
+    function addAmbulance() {
+      const id = document.getElementById('ambId').value.trim();
+      const loc = document.getElementById('ambLoc').value.trim();
+      const status = document.getElementById('ambStatus').value;
+      const type = parseFloat(document.getElementById('ambType').value);
+      if (!id || !loc) { alert('ID and location required'); return; }
+      if (!graph[loc]) { alert('Location must exist in the graph'); return; }
+      ambulances.push({ id, loc, status, type });
+      renderAmbulances();
+      log(`➕ Ambulance ${id} added at ${loc} (${status})`);
+    }
+    function addRequest() {
+      const id = document.getElementById('reqId').value.trim();
+      const loc = document.getElementById('reqLoc').value.trim();
+      const severity = parseInt(document.getElementById('reqSev').value);
+      const wait = parseInt(document.getElementById('reqWait').value);
+      if (!id || !loc) { alert('ID and location required'); return; }
+      if (!graph[loc]) { alert('Location must exist in the graph'); return; }
+      requests.push({ id, loc, severity, wait });
+      renderRequests();
+      log(`➕ Request ${id} at ${loc} (severity=${severity}, wait=${wait} min)`);
+    }
+
+    // ========== Sample data ==========
+    function loadSampleGraph() {
+      const edges = [
+        ['Hospital', 'CityCenter', 4, 1.1],
+        ['Hospital', 'North', 6, 1.0],
+        ['CityCenter', 'Park', 3, 1.4],
+        ['CityCenter', 'East', 5, 1.2],
+        ['Park', 'East', 4, 1.3],
+        ['North', 'West', 5, 1.0],
+        ['West', 'CityCenter', 7, 1.5],
+        ['East', 'South', 3, 1.1],
+        ['South', 'Park', 4, 1.6],
+        ['Hospital', 'West', 8, 1.2]
+      ];
+      edges.forEach(([f, t, d, tr]) => {
+        const cost = d * tr;
+        if (!graph[f]) graph[f] = [];
+        if (!graph[t]) graph[t] = [];
+        graph[f].push({ to: t, dist: d, traffic: tr, cost });
+        graph[t].push({ to: f, dist: d, traffic: tr, cost });
+      });
+      renderGraph();
+      log('📦 Sample road network loaded (10 roads, 7 locations).');
+    }
+    function loadSampleAmbulances() {
+      ambulances = [
+        { id: 'A1', loc: 'Hospital', status: 'available', type: 2 },
+        { id: 'A2', loc: 'CityCenter', status: 'available', type: 1.5 },
+        { id: 'A3', loc: 'East', status: 'busy', type: 1 },
+        { id: 'A4', loc: 'West', status: 'available', type: 1 },
+        { id: 'A5', loc: 'Park', status: 'available', type: 1.5 }
+      ];
+      renderAmbulances();
+      log('📦 Sample ambulances loaded.');
+    }
+    function loadSampleRequests() {
+      requests = [
+        { id: 'E1', loc: 'Park', severity: 9, wait: 3 },
+        { id: 'E2', loc: 'South', severity: 6, wait: 8 },
+        { id: 'E3', loc: 'North', severity: 8, wait: 1 },
+        { id: 'E4', loc: 'East', severity: 4, wait: 12 }
+      ];
+      renderRequests();
+      log('📦 Sample emergency requests loaded.');
+    }
+
+    // ========== Core Dispatch Logic ==========
+    function runDispatch() {
+      clearLog();
+      document.getElementById('resultArea').innerHTML = '';
+      if (Object.keys(graph).length === 0) {
+        log('❌ Graph is empty. Load or add roads first.');
+        return;
+      }
+      if (ambulances.length === 0) {
+        log('❌ No ambulances. Add some first.');
+        return;
+      }
+      if (requests.length === 0) {
+        log('❌ No emergency requests.');
+        return;
+      }
+
+      log('========== DISPATCH CYCLE STARTED ==========');
+      log('');
+
+      // 1. PRIORITY QUEUE – score requests
+      // Lower score = higher priority
+      // score = (11 - severity)*10 + wait*0.5   → high severity & longer wait = lower score
+      const pq = new PriorityQueue();
+      log('▶ PRIORITY QUEUE – ranking requests by urgency');
+      log('   Formula: score = (11 - severity)*10 + wait*0.5');
+      log('   (lower score = more urgent)');
+      requests.forEach(r => {
+        const score = (11 - r.severity) * 10 + r.wait * 0.5;
+        pq.push(r, score);
+        log(`   ${r.id} @ ${r.loc}: severity=${r.severity}, wait=${r.wait} → score=${score.toFixed(1)}`);
+      });
+      log('');
+
+      const assignments = [];
+      const available = ambulances.filter(a => a.status === 'available');
+
+      // Process in priority order
+      while (!pq.isEmpty() && available.length > 0) {
+        const { item: req, score } = pq.pop();
+        log(`▶ Next urgent request: ${req.id} (score=${score.toFixed(1)}) at ${req.loc}`);
+
+        // 2. GREEDY – choose best ambulance
+        // For each available ambulance compute Dijkstra cost, then combined score
+        // combined = routeCost / type  (prefer closer + higher capability)
+        let bestAmb = null;
+        let bestScore = Infinity;
+        let bestRoute = null;
+
+        log('   Evaluating available ambulances (Greedy + Dijkstra):');
+        for (const amb of available) {
+          const route = dijkstra(amb.loc, req.loc);
+          if (route.cost === Infinity) {
+            log(`     ${amb.id} @ ${amb.loc}: unreachable`);
+            continue;
+          }
+          const combined = route.cost / amb.type; // lower is better
+          log(`     ${amb.id} @ ${amb.loc}: routeCost=${route.cost.toFixed(2)}, type=${amb.type} → score=${combined.toFixed(2)}  path=[${route.path.join(' → ')}]`);
+          if (combined < bestScore) {
+            bestScore = combined;
+            bestAmb = amb;
+            bestRoute = route;
+          }
+        }
+
+        if (!bestAmb) {
+          log(`   ❌ No reachable ambulance for ${req.id}`);
+          continue;
+        }
+
+        // Assign
+        log(`   ✅ GREEDY chooses ${bestAmb.id} (best combined score ${bestScore.toFixed(2)})`);
+        log(`   Path: ${bestRoute.path.join(' → ')}`);
+        log(`   Estimated travel cost: ${bestRoute.cost.toFixed(2)}`);
+        log('');
+
+        // Mark busy
+        bestAmb.status = 'busy';
+        const idx = available.indexOf(bestAmb);
+        if (idx > -1) available.splice(idx, 1);
+
+        assignments.push({
+          request: req,
+          ambulance: bestAmb,
+          route: bestRoute,
+          priorityScore: score
+        });
+      }
+
+      // Remaining requests
+      if (!pq.isEmpty()) {
+        log('⚠ Some requests could not be served (no available ambulances left):');
+        while (!pq.isEmpty()) {
+          const { item } = pq.pop();
+          log(`   - ${item.id} @ ${item.loc}`);
+        }
+      }
+
+      log('========== DISPATCH COMPLETE ==========');
+      renderAmbulances(); // show busy status
+
+      // Visual result
+      let html = '<div class="result-box"><h3 style="margin-bottom:0.5rem">Final Assignments</h3>';
+      if (assignments.length === 0) {
+        html += '<p>No assignments made.</p>';
+      } else {
+        assignments.forEach(a => {
+          html += `
+            <div style="margin-bottom:1rem; padding-bottom:0.75rem; border-bottom:1px solid #334155;">
+              <strong>${a.request.id}</strong> (sev ${a.request.severity}) ← <strong>${a.ambulance.id}</strong><br/>
+              <div class="path-visual">
+                ${a.route.path.map((n, i) => {
+                  let cls = 'node';
+                  if (i === 0) cls += ' start';
+                  if (i === a.route.path.length - 1) cls += ' end';
+                  return `<span class="${cls}">${n}</span>` + (i < a.route.path.length - 1 ? '<span class="arrow">→</span>' : '');
+                }).join('')}
+              </div>
+              Cost: ${a.route.cost.toFixed(2)} &nbsp;|&nbsp; Priority score: ${a.priorityScore.toFixed(1)}
+            </div>`;
+        });
+      }
+      html += '</div>';
+      document.getElementById('resultArea').innerHTML = html;
+    }
+
+    function resetAll() {
+      Object.keys(graph).forEach(k => delete graph[k]);
+      ambulances = [];
+      requests = [];
+      renderGraph();
+      renderAmbulances();
+      renderRequests();
+      clearLog();
+      document.getElementById('resultArea').innerHTML = '';
+      log('System reset.');
+    }
+
+    // Initial render
+    renderGraph();
+    renderAmbulances();
+    renderRequests();
+  </script>
+</body>
+</html>
